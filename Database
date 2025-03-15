@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Update and upgrade system
+sudo apt update && sudo apt upgrade -y
+
+# Install PostgreSQL
+sudo apt install -y postgresql postgresql-contrib
+
+# Start and enable PostgreSQL service
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+# Check PostgreSQL status
+sudo systemctl status postgresql --no-pager
+
+# Switch to postgres user and configure database and user
+sudo -i -u postgres <<EOF
+
+# Open psql shell
+psql <<SQL
+
+-- Create database
+CREATE DATABASE db;
+
+-- Create user with password
+CREATE USER bill_kaplan WITH PASSWORD 'b1ackjack!';
+
+-- Grant privileges to user
+GRANT CONNECT ON DATABASE db TO bill_kaplan;
+
+-- Switch to the new database
+\c db
+
+-- Grant read and write permissions on all tables
+GRANT USAGE, SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO bill_kaplan;
+
+-- Ensure user can create new tables
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO bill_kaplan;
+
+-- Allow user to manage sequences
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO bill_kaplan;
+
+-- Verify user permissions
+\du
+
+-- Exit psql
+\q
+SQL
+
+EOF
+
+echo "PostgreSQL setup completed successfully."
