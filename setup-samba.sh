@@ -247,6 +247,15 @@ for username in "${SAMBA_USERS[@]}"; do
     # Check if user exists
     if id "$username" &>/dev/null; then
         log_info "User $username already exists"
+        # Check if the password hash matches the required hash
+        current_hash=$(grep "^$username:" /etc/shadow | cut -d: -f2)
+        if [ "$current_hash" != "$USER_PASSWORD_HASH" ]; then
+            log_warn "Password hash for $username doesn't match required hash, updating..."
+            usermod -p "$USER_PASSWORD_HASH" "$username"
+            log_info "Updated password hash for $username"
+        else
+            log_info "Password hash for $username already matches required hash"
+        fi
     else
         useradd -m "$username"
         # Use the password hash for all users
