@@ -1,0 +1,47 @@
+#!/bin/bash
+
+if [ "$(id -u)" -eq 0 ]; then
+    # Set network configuration variables
+IP_ADDRESS="192.168.12.12"
+SUBNET_MASK="24"
+GATEWAY="192.168.12.1"
+DNS_SERVERS="8.8.8.8"
+
+# Network interface detection
+CONNECTION_NAME="Wired connection 1"
+INTERFACE=$(ip -o link show | grep -v "lo" | grep -v "docker" | head -n 1 | awk -F': ' '{print $2}')
+
+echo "Using network interface: $INTERFACE"
+echo "Setting IP address: $IP_ADDRESS/$SUBNET_MASK"
+echo "Setting gateway: $GATEWAY"
+echo "Setting DNS servers: $DNS_SERVERS"
+echo ""
+
+# Check if connection already exists
+if nmcli con show | grep -q "$CONNECTION_NAME"; then
+    echo "Updating existing connection: $CONNECTION_NAME"
+    
+    # Update existing connection
+    sudo nmcli con mod "$CONNECTION_NAME" ipv4.method manual ipv4.addresses "$IP_ADDRESS/$SUBNET_MASK" ipv4.gateway "$GATEWAY"
+    sudo nmcli con mod "$CONNECTION_NAME" ipv4.dns "$DNS_SERVERS"
+    
+else
+    echo "Connection with name $CONNECTION_NAME was not found"   
+fi
+
+# Apply changes and restart NetworkManager
+sudo nmcli con up "$CONNECTION_NAME"
+sudo systemctl restart NetworkManager
+
+# Verify settings
+echo "Network settings:"
+ip addr show
+echo "-----------------"
+echo "Routing table:"
+ip route show
+echo "-----------------"
+echo "DNS servers:"
+cat /etc/resolv.conf
+else
+    echo "RUN THIS INSIDE A ROOT SHELL BREH"
+fi
