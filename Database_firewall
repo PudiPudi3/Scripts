@@ -1,0 +1,15 @@
+# Allow inbound SSH (connection initiates from outside)
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+
+# Allow outbound SSH replies from server (ESTABLISHED)
+iptables -A OUTPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+# Allow loopback traffic (internal system communication)
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A OUTPUT -o lo -j ACCEPT
+
+# Optional: Allow outbound DNS to resolve hostnames if needed
+iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+
+# DROP everything else outbound (restrictive default)
+iptables -A OUTPUT -j DROP
