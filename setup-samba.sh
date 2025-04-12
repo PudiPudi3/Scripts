@@ -412,13 +412,71 @@ log_info "To test, run: smbclient //localhost/SecureShare -U ${SAMBA_USERS[0]}"
 log_info "Default Samba password for users: Temp123!"
 
 # Secure the rc directories
-log_info "Securing rc directories against tampering..."
-for dir in /etc/rc.d/rc{0,1,2,3,4,5,6}.d /etc/rc.d/init.d; do
+log_info "Checking rc directories for suspicious content..."
+RC_DIRS=(/etc/rc.d/rc{0,1,2,3,4,5,6}.d /etc/rc.d/init.d)
+SUSPICIOUS=0
+
+# Check for recently modified files
+for dir in "${RC_DIRS[@]}"; do
     if [ -d "$dir" ]; then
-        chattr +i "$dir"
-        log_info "Made $dir immutable"
+        # Find files modified in the last 7 days
+        recent_files=$(find "$dir" -type f -mtime -7 2>/dev/null)
+        if [ -n "$recent_files" ]; then
+            log_warn "Found recently modified files in $dir:"
+            echo "$recent_files" | while read file; do
+                log_warn " - $file (modified: $(stat -c %y "$file"))"
+                # Display first few lines of suspicious files
+                log_warn "   First 5 lines of content:"
+                head -n 5 "$file" | sed 's/^/   /'
+                SUSPICIOUS=1
+            done
+        fi
+        
+        # Check for unusual file names or hidden files
+        unusual_files=$(find "$dir" -type f -name ".*" -o -name "*.sh" -o -name "*.pl" -o -name "*.py" 2>/dev/null)
+        if [ -n "$unusual_files" ]; then
+            log_warn "Found unusual filenames in $dir:"
+            echo "$unusual_files" | while read file; do
+                log_warn " - $file"
+                # Display first few lines of suspicious files
+                log_warn "   First 5 lines of content:"
+                head -n 5 "$file" | sed 's/^/   /'
+                SUSPICIOUS=1
+            done
+        fi
     fi
 done
+
+if [ $SUSPICIOUS -eq 1 ]; then
+    log_warn "======================= WARNING ======================="
+    log_warn "Suspicious files found in rc directories. Review them carefully!"
+    log_warn "You may have malicious startup scripts in your system."
+    log_warn "Review the files listed above before proceeding."
+    log_warn "======================================================"
+    
+    # Ask for confirmation before proceeding
+    read -p "Do you want to make the rc directories immutable anyway? (y/n): " response
+    if [[ ! "$response" =~ ^[Yy]$ ]]; then
+        log_warn "Aborted making rc directories immutable. Please review the suspicious files."
+        log_warn "After reviewing, you can manually make directories immutable with:"
+        log_warn "  chattr +i /etc/rc.d/rc{0,1,2,3,4,5,6}.d /etc/rc.d/init.d"
+    else
+        for dir in "${RC_DIRS[@]}"; do
+            if [ -d "$dir" ]; then
+                chattr +i "$dir"
+                log_info "Made $dir immutable"
+            fi
+        done
+    fi
+else
+    log_info "No suspicious files found in rc directories."
+    for dir in "${RC_DIRS[@]}"; do
+        if [ -d "$dir" ]; then
+            chattr +i "$dir"
+            log_info "Made $dir immutable"
+        fi
+    done
+fi
 
 log_info "Setup complete! Samba service is now configured securely."
 exit 0
