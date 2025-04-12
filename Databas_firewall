@@ -1,0 +1,38 @@
+#!/bin/bash
+
+echo "[+] Applying iptables rules for PostgreSQL & SSH scoring (192.168.12.7)..."
+
+# Flush existing rules
+iptables -F
+iptables -X
+
+# ====== INBOUND RULES ======
+
+# Allow SSH from scoring system
+iptables -A INPUT -s 192.168.12.7 -p tcp --dport 22 -j ACCEPT
+
+# Allow PostgreSQL from scoring system
+iptables -A INPUT -s 192.168.12.7 -p tcp --dport 5432 -j ACCEPT
+
+# Allow loopback (localhost)
+iptables -A INPUT -i lo -j ACCEPT
+
+# ====== OUTBOUND RULES ======
+
+# Allow outbound replies for SSH/PostgreSQL sessions
+iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+# Allow outbound DNS (for name resolution if needed)
+iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+
+# Allow loopback outbound
+iptables -A OUTPUT -o lo -j ACCEPT
+
+# ====== DEFAULT DROP POLICY ======
+
+# Drop all other traffic
+iptables -P INPUT DROP
+iptables -P OUTPUT DROP
+iptables -P FORWARD DROP
+
+echo "[+] iptables scoring configuration complete."
