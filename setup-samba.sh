@@ -104,39 +104,46 @@ is_installed() {
     fi
 }
 
-# Function to find files on the system
-find_and_link_files() {
+# Function to find files on the system and move them to the scoring directory
+find_and_move_files() {
     local target_dir="$1"
+    local scoring_dir="$2"
     local found_files=()
     local missing_files=()
     
     log_info "Searching for scoring files..."
     
-    # First check the scoring directory if it exists
-    if [ -d "$SCORING_DIR" ]; then
-        log_info "Checking scoring directory: $SCORING_DIR"
-        for file in "${SCORING_FILES[@]}"; do
-            if [ -f "$SCORING_DIR/$file" ]; then
-                log_info "Found file $file in $SCORING_DIR"
-                found_files+=("$SCORING_DIR/$file")
-            else
-                missing_files+=("$file")
-            fi
-        done
-    else
-        log_warn "Scoring directory $SCORING_DIR not found, will search elsewhere"
-        missing_files=("${SCORING_FILES[@]}")
+    # Create scoring directory if it doesn't exist
+    if [ ! -d "$scoring_dir" ]; then
+        log_info "Creating scoring directory: $scoring_dir"
+        mkdir -p "$scoring_dir"
+        chmod 0770 "$scoring_dir"
     fi
     
-    # If files are still missing, search the entire system
+    # First check if files already exist in the scoring directory
+    for file in "${SCORING_FILES[@]}"; do
+        if [ -f "$scoring_dir/$file" ]; then
+            log_info "File $file already exists in $scoring_dir"
+            found_files+=("$scoring_dir/$file")
+        else
+            missing_files+=("$file")
+        fi
+    done
+    
+    # For missing files, search the entire system
     if [ ${#missing_files[@]} -gt 0 ]; then
         log_info "Searching the system for missing files (this may take a while)..."
         for file in "${missing_files[@]}"; do
             log_info "Searching for $file..."
-            found=$(find / -name "$file" -type f -not -path "/proc/*" -not -path "/sys/*" 2>/dev/null | head -1)
+            found=$(find / -name "$file" -type f -not -path "/proc/*" -not -path "/sys/*" -not -path "$scoring_dir/*" 2>/dev/null | head -1)
             if [ -n "$found" ]; then
                 log_info "Found $file at $found"
-                found_files+=("$found")
+                log_info "Moving $file to $scoring_dir"
+                cp "$found" "$scoring_dir/$file"
+                # Set appropriate permissions
+                chmod 0660 "$scoring_dir/$file"
+                chown root:"$SAMBA_GROUP" "$scoring_dir/$file"
+                found_files+=("$scoring_dir/$file")
             else
                 log_warn "Could not find $file anywhere on the system"
             fi
@@ -148,7 +155,7 @@ find_and_link_files() {
         file=$(basename "$src")
         if [ ! -f "$target_dir/$file" ]; then
             ln -s "$src" "$target_dir/$file"
-            log_info "Created symbolic link for $file"
+            log_info "Created symbolic link for $file in $target_dir"
         else
             log_info "File $file already exists in $target_dir"
         fi
@@ -354,10 +361,10 @@ testparm -s
 log_info "Step 7: Setting ownership of share directory..."
 chown -R root:"$SAMBA_GROUP" "$SAMBA_SHARE_PATH"
 
-# Step 8: Find and link required files
-log_info "Step 8: Finding and linking required files..."
-files_found=$(find_and_link_files "$SAMBA_SHARE_PATH")
-log_info "Found and linked $files_found of ${#SCORING_FILES[@]} required files"
+# Step 8: Find and move required files to scoring directory, then link them
+log_info "Step 8: Finding, moving, and linking required files..."
+files_found=$(find_and_move_files "$SAMBA_SHARE_PATH" "$SCORING_DIR")
+log_info "Found and processed $files_found of ${#SCORING_FILES[@]} required files"
 
 # Step 9: Set permissions on linked files
 log_info "Step 9: Setting permissions on linked files..."
