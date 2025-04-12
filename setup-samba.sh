@@ -273,10 +273,11 @@ for username in "${SAMBA_USERS[@]}"; do
     
     # Add user to Samba password database if not already there
     if ! pdbedit -L | grep -q "^$username:"; then
+        log_info "User $username not found in Samba password database, adding..."
         (echo "Temp123!"; echo "Temp123!") | smbpasswd -a "$username"
-        log_info "Added user $username to Samba password database"
+        log_info "Added user $username to Samba password database with temporary password"
     else
-        log_info "User $username already in Samba password database"
+        log_info "User $username already in Samba password database, keeping existing password"
     fi
 done
 
