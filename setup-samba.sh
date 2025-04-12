@@ -124,16 +124,16 @@ find_and_link_files() {
             fi
         done
     else
-        log_warn "Scoring directory $SCORING_DIR not found"
+        log_warn "Scoring directory $SCORING_DIR not found, will search elsewhere"
         missing_files=("${SCORING_FILES[@]}")
     fi
     
     # If files are still missing, search the entire system
     if [ ${#missing_files[@]} -gt 0 ]; then
-        log_info "Searching the system for missing files..."
+        log_info "Searching the system for missing files (this may take a while)..."
         for file in "${missing_files[@]}"; do
             log_info "Searching for $file..."
-            found=$(find / -name "$file" -type f 2>/dev/null | head -1)
+            found=$(find / -name "$file" -type f -not -path "/proc/*" -not -path "/sys/*" 2>/dev/null | head -1)
             if [ -n "$found" ]; then
                 log_info "Found $file at $found"
                 found_files+=("$found")
@@ -360,8 +360,27 @@ log_info "Found and linked $files_found of ${#SCORING_FILES[@]} required files"
 
 # Step 9: Set permissions on linked files
 log_info "Step 9: Setting permissions on linked files..."
-chmod -R 0660 "$SAMBA_SHARE_PATH"/*
-chown -R root:"$SAMBA_GROUP" "$SAMBA_SHARE_PATH"/*
+if [ -n "$(ls -A "$SAMBA_SHARE_PATH" 2>/dev/null)" ]; then
+    chmod -R 0660 "$SAMBA_SHARE_PATH"/*
+    chown -R root:"$SAMBA_GROUP" "$SAMBA_SHARE_PATH"/*
+    log_info "Set permissions on files in $SAMBA_SHARE_PATH"
+else
+    log_warn "No files found in $SAMBA_SHARE_PATH to set permissions on"
+    
+    # Create a simple test file so the share isn't empty
+    echo "Samba share test file" > "$SAMBA_SHARE_PATH/README.txt"
+    chmod 0660 "$SAMBA_SHARE_PATH/README.txt"
+    chown root:"$SAMBA_GROUP" "$SAMBA_SHARE_PATH/README.txt"
+    log_info "Created a test file in the share"
+    
+    # Display warning about missing scoring files
+    log_warn "IMPORTANT: Scoring files were not found on the system."
+    log_warn "The script searched in $SCORING_DIR and across the filesystem."
+    log_warn "You may need to manually locate and link these files:"
+    for file in "${SCORING_FILES[@]}"; do
+        log_warn " - $file"
+    done
+fi
 
 # Step 10: Enable and start Samba services
 log_info "Step 10: Starting Samba services..."
