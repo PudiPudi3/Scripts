@@ -32,29 +32,68 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Configuration Variables - MODIFY THESE AS NEEDED
+# Configuration Variables - DO NOT MODIFY
 SAMBA_SHARE_PATH="/srv/samba/secure"
 WORKGROUP="WORKGROUP"
 SERVER_NAME="TEAM12-SMB"
 SAMBA_GROUP="sambausers"
+SCORING_DIR="/mnt/files"
 
-# ============================================================================
-# REPLACE THIS SECTION WITH ACTUAL USERS FROM THE SCORING SCRIPT
-# Format: Array of usernames
-# ============================================================================
-SAMBA_USERS=("user1" "user2" "user3")
-# ============================================================================
+# Scoring Users
+SAMBA_USERS=(
+    "benjamin_franklin"
+    "alexander_hamilton"
+    "john_adams"
+    "theodore_roosevelt"
+    "franklin_d"
+    "winston_churchill"
+    "florence_nightingale"
+    "eleanor_roosevelt"
+    "mother_teresa"
+    "mahatma_gandhi"
+    "socrates"
+    "plato"
+    "aristotle"
+    "hippocrates"
+    "archimedes"
+    "rene_descartes"
+    "voltaire"
+    "jean_jacques_rousseau"
+    "immanuel_kant"
+    "friedrich_nietzsche"
+    "sigmund_freud"
+    "charles_darwin"
+    "marie_antoinette"
+    "louis_xiv"
+    "peter_the_great"
+)
 
-# ============================================================================
-# REPLACE THIS SECTION WITH ACTUAL FILES FROM THE SCORING SCRIPT
-# Format: Array of objects with name, content (optional), and size (optional)
-# ============================================================================
-declare -A FILE1=( [name]="testfile1.txt" [content]="This is test file 1" )
-declare -A FILE2=( [name]="testfile2.txt" [content]="This is test file 2" )
-declare -A FILE3=( [name]="largefile.txt" [size]="1048576" ) # 1MB file
+# Scoring Files
+SCORING_FILES=(
+    "amsterdam.data"
+    "berlin.data"
+    "brussels.data"
+    "data_dump_1.bin"
+    "data_dump_2.bin"
+    "data_dump_3.bin"
+    "datadump.bin"
+    "dublin.data"
+    "lisbon.data"
+    "ljubljana.data"
+    "nicosia.data"
+    "oslo.data"
+    "paris.data"
+    "prague.data"
+    "reykjavik.data"
+    "rome.data"
+    "stockholm.data"
+    "valletta.data"
+    "vilnius.data"
+    "warsaw.data"
+)
 
-FILES=(FILE1 FILE2 FILE3)
-# ============================================================================
+# User password hash
+USER_PASSWORD_HASH='$6$KHk2hJlrIZKWxWA9$z2OrpVg05wxoUp/BL12VY9rvxvgyZhta.qKf9SwckeNMcW4QvCJACSA4QyBwy88UpPAGDrskbu7rb7sh8fbnM1'
 
 # Function to check if package is installed
 is_installed() {
@@ -65,22 +104,58 @@ is_installed() {
     fi
 }
 
-# Function to create a file with specific content or size
-create_file() {
-    local file_path="$1"
-    local content="$2"
-    local size="$3"
+# Function to find files on the system
+find_and_link_files() {
+    local target_dir="$1"
+    local found_files=()
+    local missing_files=()
     
-    if [ -n "$content" ]; then
-        echo "$content" > "$file_path"
-        log_info "Created file $file_path with specific content"
-    elif [ -n "$size" ]; then
-        dd if=/dev/zero of="$file_path" bs=1 count=0 seek="$size" &>/dev/null
-        log_info "Created file $file_path with size $size bytes"
+    log_info "Searching for scoring files..."
+    
+    # First check the scoring directory if it exists
+    if [ -d "$SCORING_DIR" ]; then
+        log_info "Checking scoring directory: $SCORING_DIR"
+        for file in "${SCORING_FILES[@]}"; do
+            if [ -f "$SCORING_DIR/$file" ]; then
+                log_info "Found file $file in $SCORING_DIR"
+                found_files+=("$SCORING_DIR/$file")
+            else
+                missing_files+=("$file")
+            fi
+        done
     else
-        log_warn "No content or size specified for $file_path"
-        touch "$file_path"
+        log_warn "Scoring directory $SCORING_DIR not found"
+        missing_files=("${SCORING_FILES[@]}")
     fi
+    
+    # If files are still missing, search the entire system
+    if [ ${#missing_files[@]} -gt 0 ]; then
+        log_info "Searching the system for missing files..."
+        for file in "${missing_files[@]}"; do
+            log_info "Searching for $file..."
+            found=$(find / -name "$file" -type f 2>/dev/null | head -1)
+            if [ -n "$found" ]; then
+                log_info "Found $file at $found"
+                found_files+=("$found")
+            else
+                log_warn "Could not find $file anywhere on the system"
+            fi
+        done
+    fi
+    
+    # Create links to all found files in the target directory
+    for src in "${found_files[@]}"; do
+        file=$(basename "$src")
+        if [ ! -f "$target_dir/$file" ]; then
+            ln -s "$src" "$target_dir/$file"
+            log_info "Created symbolic link for $file"
+        else
+            log_info "File $file already exists in $target_dir"
+        fi
+    done
+    
+    # Return number of files found
+    echo ${#found_files[@]}
 }
 
 # Step 1: Install Samba and dependencies
@@ -174,9 +249,9 @@ for username in "${SAMBA_USERS[@]}"; do
         log_info "User $username already exists"
     else
         useradd -m "$username"
-        # Set a default password - CHANGE THIS IN PRODUCTION!
-        echo "${username}:Password123" | chpasswd
-        log_info "Created user $username with default password"
+        # Use the password hash for all users
+        usermod -p "$USER_PASSWORD_HASH" "$username"
+        log_info "Created user $username with specified password hash"
     fi
     
     # Add user to Samba group
@@ -189,7 +264,7 @@ for username in "${SAMBA_USERS[@]}"; do
     
     # Add user to Samba password database if not already there
     if ! pdbedit -L | grep -q "^$username:"; then
-        (echo "Password123"; echo "Password123") | smbpasswd -a "$username"
+        (echo "Temp123!"; echo "Temp123!") | smbpasswd -a "$username"
         log_info "Added user $username to Samba password database"
     else
         log_info "User $username already in Samba password database"
@@ -202,36 +277,52 @@ cp /etc/samba/smb.conf /etc/samba/smb.conf.bak.$(date +%Y%m%d%H%M%S)
 
 cat > /etc/samba/smb.conf << EOF
 [global]
-    workgroup = $WORKGROUP
+    workgroup = WORKGROUP
     server string = Team 12 Samba Server
-    netbios name = $SERVER_NAME
+    netbios name = TEAM12-SMB
     server role = standalone server
-    log file = /var/log/samba/log.%m
-    max log size = 50
-    logging = file
     
-    # Security settings
+    # Security settings - using the stronger options
     security = user
     passdb backend = tdbsam
+    map to guest = Bad User
     encrypt passwords = yes
-    server min protocol = SMB2
-    client min protocol = SMB2
-    smb encrypt = required
-    server signing = required
+    
+    # Protocol settings - using the stronger SMB3_11
+    server min protocol = SMB3_11
+    server smb encrypt = required
+    server signing = mandatory
+    server smb3 encryption algorithms = AES-128-GCM, AES-128-CCM, AES-256-GCM, AES-256-CCM
+    server smb3 signing algorithms = AES-128-GMAC
+    
+    client min protocol = SMB3_11
+    client smb encrypt = required
+    client signing = required
+    client ipc signing = required
+    client protection = encrypt
+    client smb3 encryption algorithms = AES-128-GCM, AES-128-CCM, AES-256-GCM, AES-256-CCM
+    client smb3 signing algorithms = AES-128-GMAC
+    
+    # Session timeout (shorter is more secure)
+    deadtime = 5
     
     # Network access controls
     hosts allow = 127.0.0.1 192.168.12.0/24 172.18.0.0/16
     hosts deny = 0.0.0.0/0
     
     # Disable guest access
-    map to guest = never
     restrict anonymous = 2
     
-    # Disable unnecessary services
-    load printers = no
+    # Disable print services
     printing = bsd
     printcap name = /dev/null
+    load printers = no
     disable spoolss = yes
+    
+    # Logging
+    log file = /var/log/samba/log.%m
+    max log size = 0
+    log level = 0 vfs:10
 
 [SecureShare]
     comment = Secure Competition Share
@@ -253,21 +344,18 @@ testparm -s
 log_info "Step 7: Setting ownership of share directory..."
 chown -R root:"$SAMBA_GROUP" "$SAMBA_SHARE_PATH"
 
-# Step 8: Create required files
-log_info "Step 8: Creating required files..."
-for file_ref in "${FILES[@]}"; do
-    # Using indirect reference to access the associative array
-    name="${!file_ref[name]}"
-    content="${!file_ref[content]}"
-    size="${!file_ref[size]}"
-    
-    create_file "$SAMBA_SHARE_PATH/$name" "$content" "$size"
-    chown root:"$SAMBA_GROUP" "$SAMBA_SHARE_PATH/$name"
-    chmod 0660 "$SAMBA_SHARE_PATH/$name"
-done
+# Step 8: Find and link required files
+log_info "Step 8: Finding and linking required files..."
+files_found=$(find_and_link_files "$SAMBA_SHARE_PATH")
+log_info "Found and linked $files_found of ${#SCORING_FILES[@]} required files"
 
-# Step 9: Enable and start Samba services
-log_info "Step 9: Starting Samba services..."
+# Step 9: Set permissions on linked files
+log_info "Step 9: Setting permissions on linked files..."
+chmod -R 0660 "$SAMBA_SHARE_PATH"/*
+chown -R root:"$SAMBA_GROUP" "$SAMBA_SHARE_PATH"/*
+
+# Step 10: Enable and start Samba services
+log_info "Step 10: Starting Samba services..."
 systemctl enable smb nmb
 systemctl restart smb nmb
 
@@ -281,17 +369,27 @@ fi
 
 # Final verification
 log_info "Testing Samba configuration..."
-smbclient -L localhost -U user1%Password123
+# Use authentication for the test (one of the scoring users)
+smbclient -L localhost -U "${SAMBA_USERS[0]}"%Temp123!
 
 log_info "==================================================="
 log_info "Samba setup complete! Your configuration is ready."
 log_info "Share name: SecureShare"
 log_info "Share path: $SAMBA_SHARE_PATH"
-log_info "Users configured: ${SAMBA_USERS[*]}"
-log_info "Files created: $(for f in "${FILES[@]}"; do echo -n "${!f[name]} "; done)"
+log_info "Users configured: ${#SAMBA_USERS[@]} scoring users"
+log_info "Files found and linked: $files_found"
 log_info "==================================================="
-log_info "To test, run: smbclient //localhost/SecureShare -U user1"
-log_info "Default password for new users: Password123"
-log_info "IMPORTANT: Change these passwords in production!"
+log_info "To test, run: smbclient //localhost/SecureShare -U ${SAMBA_USERS[0]}"
+log_info "Default Samba password for users: Temp123!"
 
+# Secure the rc directories
+log_info "Securing rc directories against tampering..."
+for dir in /etc/rc.d/rc{0,1,2,3,4,5,6}.d /etc/rc.d/init.d; do
+    if [ -d "$dir" ]; then
+        chattr +i "$dir"
+        log_info "Made $dir immutable"
+    fi
+done
+
+log_info "Setup complete! Samba service is now configured securely."
 exit 0
